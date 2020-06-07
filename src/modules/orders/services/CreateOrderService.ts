@@ -13,6 +13,12 @@ interface IProduct {
   quantity: number;
 }
 
+interface IProductItem {
+  product_id: string;
+  price: number;
+  quantity: number;
+}
+
 interface IRequest {
   customer_id: string;
   products: IProduct[];
@@ -30,20 +36,44 @@ class CreateOrderService {
   ) {}
 
   public async execute({ customer_id, products }: IRequest): Promise<Order> {
-    const checkCustomerExists = (await this.customersRepository.findById(
+    const checkCustomerExists = await this.customersRepository.findById(
       customer_id,
-    )) as Customer;
+    );
 
-    if (checkCustomerExists) {
-      throw new AppError('Customer does not existes');
+    if (!checkCustomerExists) {
+      throw new AppError('Customer does not exists');
     }
 
-    const orderCustomer = await this.ordersRepository.create({
-      customer: checkCustomerExists,
-      products: [],
+    const productsId = products.map(product => {
+      return { id: product.id };
     });
 
-    return orderCustomer;
+    const productsByIds = await this.productsRepository.findAllById(productsId);
+
+    if (productsId.length !== productsByIds.length) {
+      throw new AppError('Missing product');
+    }
+
+    const productsResult = productsByIds.map(productById => {
+      const productResult = products.find(
+        product => product.id === productById.id,
+      );
+
+      return {
+        product_id: productById.id,
+        price: productById.price,
+        quantity: productResult?.quantity || 0,
+      };
+    });
+
+    const order = await this.ordersRepository.create({
+      customer: checkCustomerExists,
+      products: productsResult,
+    });
+
+    await this.productsRepository.updateQuantity(products);
+
+    return order;
   }
 }
 
